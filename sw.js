@@ -5,7 +5,7 @@
   Fonts: saved copy first.
   Bump CACHE when the list of app files changes.
 */
-var CACHE = "foot-rehab-v1";
+var CACHE = "foot-rehab-v2";
 var CORE = ["./", "./index.html", "./app.js", "./exercises.js", "./manifest.webmanifest",
   "./icons/icon-180.png", "./icons/icon-192.png", "./icons/icon-512.png"];
 

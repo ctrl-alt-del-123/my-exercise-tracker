@@ -10,7 +10,7 @@
 (function () {
   "use strict";
 
-  var VERSION = "2026-10-30";
+  var VERSION = "2026-10-30.2";
   var P = window.PROGRAM;
   var app = document.getElementById("app");
   var sheet = document.getElementById("sheet");
@@ -67,7 +67,7 @@
 
   var S = Object.assign({
     stage: P.stages[0].id, first: "right", order: "exercise", quick: false,
-    sound: true, voice: false, rest: P.restBetweenSets || 20, reps: {}, holds: {}, extras: {}
+    sound: true, voice: false, silentOk: true, rest: P.restBetweenSets || 20, reps: {}, holds: {}, extras: {}
   }, load(KEY_S, {}));
   ["reps", "holds", "extras"].forEach(function (k) { if (!S[k] || typeof S[k] !== "object") S[k] = {}; });
   if (!stageById(S.stage)) S.stage = P.stages[0].id;
@@ -240,23 +240,45 @@
   }
 
   /* ---------- sound, voice, screen ---------- */
-  var actx = null, wakeLock = null;
-  function initAudio() {
+  // iOS treats web-page sound as "ambient" by default, and ambient sound is muted when the phone
+  // is on silent. Asking for "playback" (iOS 17+) makes the cues play like a media app instead.
+  var actx = null, wakeLock = null, idleTimer = null;
+  function setAudioMode() {
+    try { if (navigator.audioSession) navigator.audioSession.type = S.silentOk ? "playback" : "auto"; } catch (e) {}
+  }
+  function initAudio() { // call from a tap: iOS only starts sound in response to one
+    setAudioMode();
     try {
-      if (!actx) { var C = window.AudioContext || window.webkitAudioContext; if (C) actx = new C(); }
+      if (!actx) {
+        var C = window.AudioContext || window.webkitAudioContext;
+        if (C) {
+          actx = new C();
+          var buf = actx.createBuffer(1, 1, 22050), src = actx.createBufferSource(); // silent blip unlocks output on iOS
+          src.buffer = buf; src.connect(actx.destination); src.start(0);
+        }
+      }
       if (actx && actx.state !== "running") actx.resume();
     } catch (e) {}
+    clearTimeout(idleTimer);
+  }
+  // Let go of the speaker when no session is running, so music from other apps can play again.
+  function idleAudio(delay) {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () {
+      if (view !== "item" && actx && actx.state === "running") { try { actx.suspend(); } catch (e) {} }
+    }, delay || 2500);
   }
   function beep(f, d, v) {
     if (!S.sound || !actx) return;
     try {
-      var o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+      if (actx.state !== "running") actx.resume();
+      var o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime + 0.01;
       o.type = "sine"; o.frequency.value = f;
-      g.gain.setValueAtTime(v || 0.1, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      g.gain.setValueAtTime(v || 0.45, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
       o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + d + 0.02);
     } catch (e) {}
   }
-  function chime() { beep(660, 0.18); setTimeout(function () { beep(880, 0.28); }, 200); }
+  function chime() { beep(660, 0.22); setTimeout(function () { beep(880, 0.32); }, 220); }
   function speak(t) {
     if (!S.voice || !t) return;
     try { var ss = window.speechSynthesis; if (!ss) return; ss.cancel(); ss.speak(new SpeechSynthesisUtterance(t)); } catch (e) {}
@@ -310,7 +332,7 @@
     var frac = cueDur > 0 ? Math.max(0, Math.min(1, rem / cueDur)) : 0;
     r.style.strokeDashoffset = String(CIRC * (1 - frac));
   }
-  function announce(c) { beep(c.kind === "effort" ? 740 : c.kind === "relax" ? 520 : 440, 0.14); speak(c.say); }
+  function announce(c) { beep(c.kind === "effort" ? 740 : c.kind === "relax" ? 520 : 440, 0.2); speak(c.say); }
   function startCue(i) {
     ci = i; var c = cues[ci]; cueDur = c.secs * 1000; cueStart = now();
     paintCue(c); paintTime(cueDur); announce(c);
@@ -377,6 +399,7 @@
     } else {
       renderHome(); window.scrollTo(0, 0);
     }
+    idleAudio(3000);
   }
 
   /* ---------- foot drawing ---------- */
@@ -509,7 +532,10 @@
     h += '<div class="sec"><h3>Order</h3>' + seg("order", [["exercise", "Exercise by exercise", "Both feet on one move, then the next move"], ["foot", "One foot at a time", "Every move on one foot, then the other foot"]], S.order, true) + "</div>";
     h += '<div class="sec"><h3>Before each exercise</h3>' + seg("quick", [["0", "Full instructions", "Read the steps, then tap Start"], ["1", "Quick start", "Short preview, then it starts on its own"]], S.quick ? "1" : "0", true) + "</div>";
     h += '<div class="sec"><h3>Cues</h3><div class="opts">' + toggle("sw", "sound", S.sound, "Beeps", "A tone at each change") +
-      toggle("sw", "voice", S.voice, "Spoken cues", "Lets you keep your eyes on your foot") + '</div><p class="hint">No sound? Check that your iPhone is not on silent.</p></div>';
+      toggle("sw", "voice", S.voice, "Spoken cues", "Lets you keep your eyes on your foot") +
+      toggle("sw", "silentOk", S.silentOk, "Play on silent", "Cues play even when your iPhone is on silent. Can pause music from other apps.") +
+      '</div><button class="btn sec" data-act="test" style="width:100%;margin-top:10px">Test sound</button>' +
+      '<p class="hint">Still nothing? Turn the volume up with the side buttons, and check that headphones or a car aren\'t connected.</p></div>';
     h += '<div class="sec"><h3>Rest between sets</h3>' + stepperRow("Seconds", "", "rest", S.rest, 5) + "</div>";
     if (P.extras.length) {
       h += '<div class="sec"><h3>Extras</h3><div class="opts">' + P.extras.map(function (x) { return toggle("extra", x.id, S.extras[x.id], x.label, x.hint); }).join("") + "</div></div>";
@@ -735,11 +761,18 @@
         if (k === "quick") S.quick = v === "1"; else if (k === "stage" || k === "first" || k === "order") S[k] = v;
         saveS(); keepScroll(renderHome); break;
       case "sw":
-        if (k !== "sound" && k !== "voice") break;
+        if (k !== "sound" && k !== "voice" && k !== "silentOk") break;
         S[k] = !S[k]; saveS();
+        if (k === "silentOk") setAudioMode();
         if (k === "voice" && S.voice) speak("Spoken cues on.");
-        if (k === "sound" && S.sound) beep(660, 0.15);
+        if (k === "sound" && S.sound) beep(660, 0.2);
         keepScroll(renderHome); break;
+      case "test":
+        if (!S.sound && !S.voice) { toast("Beeps and spoken cues are both off."); break; }
+        beep(740, 0.25); setTimeout(function () { beep(520, 0.3); }, 320);
+        speak("Sound check.");
+        toast("Playing a test sound");
+        break;
       case "extra":
         S.extras[k] = !S.extras[k]; saveS(); keepScroll(renderHome); break;
       case "adj":
@@ -787,6 +820,7 @@
     if (!b) return;
     initAudio();
     act(b.getAttribute("data-act"), b);
+    if (view !== "item") idleAudio();
   });
   document.addEventListener("toggle", function (e) {
     var t = e.target;
@@ -800,6 +834,7 @@
       clearAuto(); hush();
     } else if (view === "item") {
       lockScreen();
+      try { if (actx && actx.state !== "running") actx.resume(); } catch (e) {}
     } else if (view === "home") {
       keepScroll(renderHome);
     }
