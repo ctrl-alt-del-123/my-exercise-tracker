@@ -22,9 +22,21 @@ A small iPhone web app for a home foot-exercise program. It times every hold and
 
 1. In `exercises.js`, copy an entry under `exercises` (for example `toe-spread`) and give it a new id. Set its name, sets, reps, hold time, instructions and the timed `rep` phases. The comment at the top of the file lists every field.
 2. Add the id to a stage's `exercises` list. To make it an optional switch in Settings, add it to `extras` instead.
-3. Commit and push. GitHub Pages republishes in about a minute, and the phone picks up the change the next time the app opens with a connection.
+3. Commit, then publish (see below). The phone picks up the change the next time the app opens with a connection.
 
 A misspelled id in a stage is skipped instead of breaking the app; the browser console shows a warning.
+
+## Publishing
+
+The site is served by GitHub Pages from the `gh-pages` branch: https://ctrl-alt-del-123.github.io/my-exercise-tracker/
+
+Keep `gh-pages` identical to `main`. After committing to `main`, run:
+
+```
+git push origin main main:gh-pages
+```
+
+GitHub Pages republishes in about a minute.
 
 ## History and backup
 
